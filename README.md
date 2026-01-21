@@ -4,7 +4,7 @@
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1095886b-241f-496d-8441-27c712264e82" />
 
 ## requrements
-STEAMCMD
+STEAMCMD IS NEEDED
 ```
 pip install customtkinter requests beautifulsoup4 google-generativeai lxml certifi
 ```
