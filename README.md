@@ -1,22 +1,266 @@
-# rimworld steam collection to xml convertor
-## preview
+# 🎮 RimWorld Mod Collector
+<img width="1920" height="1058" alt="image" src="https://github.com/user-attachments/assets/0e139c82-99cc-4ec7-8991-c6c9724c2958" />
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1095886b-241f-496d-8441-27c712264e82" />
+Desktop-приложение на Python для загрузки модов Steam Workshop для игры RimWorld и генерации XML-файлов, совместимых с RimPy.
 
-## requrements
-STEAMCMD IS NEEDED
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
+![PyQt6](https://img.shields.io/badge/PyQt6-6.4+-green.svg)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+## 📋 Описание
+
+RimWorld Mod Collector позволяет:
+- Загружать моды из коллекций Steam Workshop через steamcmd
+- Извлекать `packageId` из файлов `About/About.xml` каждого мода
+- Генерировать XML-файлы, полностью совместимые с RimPy
+- Кэшировать информацию о модах для ускорения повторной обработки
+
+## ✨ Особенности
+
+- 🌙 **Тёмный неоновый интерфейс** - современный минималистичный дизайн
+- 📦 **Два режима работы**:
+  - **Режим 1 (Постоянный)**: моды сохраняются в кэше
+  - **Режим 2 (Временный)**: моды удаляются после обработки
+- 💾 **Локальная база данных** SQLite для кэширования
+- 📊 **Прогресс в реальном времени** с детальной статистикой
+- 🔄 **Асинхронная обработка** без блокировки интерфейса
+- ⚙️ **Автосохранение настроек**
+
+## 🛠️ Установка
+
+### Требования
+
+- Python 3.10 или выше
+- [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD)
+
+### Шаги установки
+
+1. **Клонируйте репозиторий:**
+```bash
+git clone https://github.com/your-repo/rimworld-mod-collector.git
+cd rimworld-mod-collector
 ```
-pip install customtkinter requests beautifulsoup4 google-generativeai lxml certifi
+
+2. **Создайте виртуальное окружение (рекомендуется):**
+```bash
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Linux/Mac
+source venv/bin/activate
 ```
-### ENG 
-converts the steam workshop collection of mods to an xml file for the rimpy mod manager.
-To work, you need steamcmd and the path to it (if set to path, then you do not need to configure the steamcmd field)
-A link to the collection on steam is also required (it must be public)
-### ES
-convierte la colección steam workshop de mods en un archivo xml, para rimpy mod manager.
-El trabajo requiere steamcmd y la ruta antes (si está instalado en path entonces no es necesario configurar el campo steamcmd)
-También se requiere una referencia a la colección en steam (debe ser pública)
-### RUS
-преобразует коллекцию steam workshop модов в xml файл, для rimpy mod manager.
-Для работы требуется steamcmd и путь до него (если установлен в path то настраивать поле steamcmd не надо)
-Также требуется ссылка на коллекцию в steam(она должна быть публичной)
+
+3. **Установите зависимости:**
+```bash
+pip install -r requirements.txt
+```
+
+4. **Скачайте и установите SteamCMD:**
+   - [Инструкция для Windows](https://developer.valvesoftware.com/wiki/SteamCMD#Windows)
+   - [Инструкция для Linux](https://developer.valvesoftware.com/wiki/SteamCMD#Linux)
+
+## 🚀 Запуск
+
+```bash
+python main.py
+```
+
+## 📖 Использование
+
+### Основной процесс
+
+1. **Вставьте ссылку на коллекцию** Steam Workshop в поле ввода
+   - Пример: `https://steamcommunity.com/sharedfiles/filedetails/?id=123456789`
+
+2. **Укажите путь к steamcmd.exe**
+   - Используйте кнопку "Обзор" для выбора файла
+
+3. **Выберите папку для сохранения** XML-файла
+
+4. **Введите имя файла** (без расширения)
+
+5. **Выберите режим работы и папку загрузки:**
+   - **Режим 1**: Укажите папку для постоянного хранения модов
+   - **Режим 2**: Укажите временную папку для загрузки
+
+6. **Нажмите "Запустить"**
+
+### Режимы работы
+
+#### Режим 1 (Постоянный, с кэшем)
+- Моды скачиваются в указанную папку для постоянного хранения
+- Моды скачиваются только если папка с workshop ID отсутствует
+- После обработки моды остаются в каталоге
+- Идеально для повторного использования модов
+- Если папка не указана, используется папка steamcmd по умолчанию
+
+#### Режим 2 (Временный)
+- Моды скачиваются во временную папку
+- packageId извлекается, затем моды удаляются
+- Информация сохраняется в локальной базе данных
+- При повторной обработке данные берутся из кэша
+- Экономит дисковое пространство
+- Если папка не указана, используется папка steamcmd по умолчанию
+
+## 📁 Структура проекта
+
+```
+rimworld_mod_collector/
+├── __init__.py          # Инициализация пакета
+├── main.py              # Главный модуль с GUI
+├── database.py          # Работа с SQLite базой данных
+├── steam_handler.py     # Взаимодействие со Steam/steamcmd
+├── xml_processor.py     # Обработка XML файлов
+├── settings.py          # Управление настройками
+├── styles.py            # Стили интерфейса
+├── requirements.txt     # Зависимости Python
+└── README.md            # Документация
+```
+
+## 🏗️ Архитектура
+
+### Модули
+
+| Модуль | Описание |
+|--------|----------|
+| `database.py` | SQLite база данных для хранения связи workshop_id → package_id |
+| `steam_handler.py` | Парсинг коллекций, загрузка модов через steamcmd |
+| `xml_processor.py` | Извлечение packageId, генерация RimPy XML |
+| `settings.py` | Сохранение/загрузка настроек в JSON |
+| `styles.py` | Тёмная неоновая цветовая схема |
+| `main.py` | PyQt6 GUI, рабочие потоки |
+
+### Диаграмма классов
+
+```
+┌─────────────────┐     ┌──────────────────┐
+│   MainWindow    │────▶│   WorkerThread   │
+│    (PyQt6)      │     │   (QThread)      │
+└─────────────────┘     └────────┬─────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐     ┌──────────────────┐    ┌──────────────────┐
+│   ModDatabase   │     │  SteamHandler    │    │  XmlProcessor    │
+│    (SQLite)     │     │   (steamcmd)     │    │   (XML/RimPy)    │
+└─────────────────┘     └──────────────────┘    └──────────────────┘
+```
+
+## 📄 Формат выходного XML
+
+Генерируемый XML полностью совместим с RimPy:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<ModList>
+  <Name>MyModList</Name>
+  <Version>1.0</Version>
+  <Mods>
+    <!-- Workshop ID: 123456789 | Mod Name -->
+    <li>author.modname</li>
+    <!-- Workshop ID: 987654321 | Another Mod -->
+    <li>another.author.mod</li>
+  </Mods>
+</ModList>
+```
+
+## ⚙️ Настройки
+
+Настройки автоматически сохраняются в `settings.json`:
+
+```json
+{
+  "steamcmd_path": "C:/steamcmd/steamcmd.exe",
+  "output_path": "C:/RimWorld/ModLists",
+  "xml_filename": "MyModList",
+  "mods_download_path": "C:/RimWorld/Mods",
+  "temp_download_path": "C:/Temp/RimWorldMods",
+  "work_mode": 1,
+  "log_font_size": 10,
+  "verbose_logging": false
+}
+```
+
+## 🎨 Интерфейс
+
+### Цветовая схема
+
+- **Фон**: Тёмно-синий (#1a1a2e)
+- **Акценты**: Неоновый голубой (#00f5ff)
+- **Успех**: Неоновый зелёный (#00ff88)
+- **Ошибки**: Неоновый красный (#ff0055)
+- **Предупреждения**: Неоновый жёлтый (#ffff00)
+
+### Макет
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  🎮 RimWorld Mod Collector                                     │
+├─────────────────────────────────────┬──────────────────────────┤
+│                                     │                          │
+│  📦 Steam Workshop Коллекция        │  📋 Логи                 │
+│  [________________________]         │  ┌────────────────────┐  │
+│                                     │  │ [INFO] Starting... │  │
+│  💾 Настройки сохранения            │  │ [SUCCESS] Done     │  │
+│  [________________________] [📁]    │  │ [ERROR] Failed     │  │
+│  Имя файла: [______________]        │  │                    │  │
+│                                     │  │                    │  │
+│  ⚙️ SteamCMD                        │  └────────────────────┘  │
+│  [________________________] [📁]    │                          │
+│                                     │  Шрифт: [10] [▲][▼]      │
+│  🔄 Режим работы                    │                          │
+│  ○ Режим 1: Постоянный              │  [🗑️ Очистить]           │
+│    Папка модов: [________] [📁]     │  [📋 Копировать]         │
+│  ○ Режим 2: Временный               │                          │
+│    Временная папка: [____] [📁]     │  ☐ Расширенное           │
+│                                     │    логирование           │
+│  [████████████████░░░░] 75%         │                          │
+│  Обработано: 15 | Пропущено: 5      │                          │
+│                                     │                          │
+│  [▶️ Запустить] [⏹️ Стоп] [📂 Папка] │                          │
+│                                     │                          │
+└─────────────────────────────────────┴──────────────────────────┘
+         75% ширины                        25% ширины
+```
+
+## 🔧 Разработка
+
+### Добавление новых функций
+
+1. Создайте новый модуль в директории проекта
+2. Импортируйте его в `__init__.py`
+3. Интегрируйте с `WorkerThread` в `main.py`
+
+### Тестирование
+
+```bash
+# Запуск отдельных модулей для тестирования
+python database.py
+python steam_handler.py
+python xml_processor.py
+```
+
+## 📝 Лицензия
+
+MIT License - свободное использование и модификация.
+
+## 🤝 Вклад в проект
+
+1. Fork репозитория
+2. Создайте feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit изменения (`git commit -m 'Add amazing feature'`)
+4. Push в branch (`git push origin feature/amazing-feature`)
+5. Откройте Pull Request
+
+## 📞 Поддержка
+
+При возникновении проблем создайте Issue в репозитории с описанием:
+- Версия Python
+- Операционная система
+- Текст ошибки
+- Шаги для воспроизведения
+
+---
+
+**Сделано с ❤️ для сообщества RimWorld**
