@@ -1,0 +1,42 @@
+# RimWorld Mod Collector - Зависимости
+# Python 3.10+
+# =====================
+# Установка: pip install -r requirements.txt
+# =====================
+
+# =====================
+# ОСНОВНЫЕ ЗАВИСИМОСТИ
+# =====================
+
+# GUI Framework - графический интерфейс
+PyQt6>=6.4.0
+
+# Асинхронные HTTP запросы - для работы с Steam Web API
+aiohttp>=3.8.0
+
+# =====================
+# ДОПОЛНИТЕЛЬНЫЕ ЗАВИСИМОСТИ
+# =====================
+
+# Улучшенный парсинг XML (вместо встроенного xml.etree.ElementTree)
+lxml>=4.9.0
+
+# HTTP запросы (альтернатива aiohttp для синхронных операций)
+requests>=2.28.0
+
+# Парсинг HTML (для извлечения данных из веб-страниц)
+beautifulsoup4>=4.11.0
+
+# =====================
+# ВСТРОЕННЫЕ В PYTHON
+# (не требуют установки)
+# =====================
+# os, sys, re, subprocess, shutil, tempfile, time, json, datetime
+# xml.etree.ElementTree, xml.dom.minidom
+# typing - Optional, List, Tuple, Callable, Any
+# dataclasses - dataclass, asdict, field
+# enum - Enum
+# pathlib - Path
+# concurrent.futures - ThreadPoolExecutor
+# sqlite3 - встроен в Python
+# asyncio - встроен в Python

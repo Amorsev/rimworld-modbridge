@@ -1,1102 +1,916 @@
+"""
+Главный модуль приложения RimWorld Mod Collector.
+Реализует графический интерфейс на PyQt6 с тёмным неоновым стилем.
+"""
 
+import sys
 import os
-import re
-import subprocess
-import xml.etree.ElementTree as ET
-from pathlib import Path
-import requests
-from bs4 import BeautifulSoup
-import tempfile
-import shutil
-import threading
-import customtkinter as ctk
-from tkinter import filedialog, messagebox
-import json
-import google.generativeai as genai
-import time
+import asyncio
+from datetime import datetime
+from typing import Optional, List
+from concurrent.futures import ThreadPoolExecutor
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QTextEdit, QRadioButton,
+    QButtonGroup, QGroupBox, QFileDialog, QProgressBar, QSpinBox,
+    QFrame, QSplitter, QMessageBox, QCheckBox
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QTextCursor, QIcon
 
-CONFIG_FILE = "converter_config.json"
-
-TRANSLATIONS = {
-    'en': {
-        'title': '🎮 RimWorld Mod Collection Converter',
-        'subtitle': 'Convert Steam Workshop collections to RimPy XML format',
-        'toggle_theme': '🌓 Toggle Theme',
-        'log_font_size': 'Log Font Size:',
-        'clear_log': '🗑️ Clear Log',
-        'collection_url': '📋 Collection URL:',
-        'output_file': '💾 Output File:',
-        'steamcmd_path': '⚙️ SteamCMD Path:',
-        'browse': '📁 Browse',
-        'statistics': '📊 Conversion Statistics',
-        'total_mods': 'Total Mods',
-        'successful': '✅ Successful',
-        'failed': '❌ Failed',
-        'current': '🔄 Current',
-        'start_conversion': '🚀 Start Conversion',
-        'converting': '⏳ Converting...',
-        'ready': 'Ready to convert',
-        'conversion_log': '📝 Conversion Log',
-        'language': '🌐 Language:',
-        'gemini_api_key': '🔑 Gemini API Key(WIP):',
-        'translate_ui': 'Translate UI',
-        'translate_logs': 'Translate Logs',
-        'error': 'Error',
-        'success': 'Success',
-        'enter_url': 'Please enter a collection URL',
-        'specify_output': 'Please specify an output file',
-        'conversion_complete': '🎉 Conversion complete!',
-        'total': 'Total mods:',
-        'file_saved': 'File saved to:',
-        'conversion_failed': 'Conversion failed:',
-        'cached': '📦 Cached',
-    },
-    'ru': {
-        'title': '🎮 Конвертер коллекций модов RimWorld',
-        'subtitle': 'Преобразование коллекций Steam Workshop в формат RimPy XML',
-        'toggle_theme': '🌓 Сменить тему',
-        'log_font_size': 'Размер шрифта логов:',
-        'clear_log': '🗑️ Очистить лог',
-        'collection_url': '📋 URL коллекции:',
-        'output_file': '💾 Выходной файл:',
-        'steamcmd_path': '⚙️ Путь SteamCMD(не менять если в path):',
-        'browse': '📁 Обзор',
-        'statistics': '📊 Статистика конвертации',
-        'total_mods': 'Всего модов',
-        'successful': '✅ Успешно',
-        'failed': '❌ Провалено',
-        'current': '🔄 Текущий',
-        'start_conversion': '🚀 Начать конвертацию',
-        'converting': '⏳ Конвертация...',
-        'ready': 'Готов к конвертации',
-        'conversion_log': '📝 Журнал конвертации',
-        'language': '🌐 Язык:',
-        'gemini_api_key': '🔑 Ключ Gemini API(функция в разработке):',
-        'translate_ui': 'Перевести интерфейс',
-        'translate_logs': 'Переводить логи',
-        'error': 'Ошибка',
-        'success': 'Успех',
-        'enter_url': 'Пожалуйста, введите URL коллекции',
-        'specify_output': 'Пожалуйста, укажите выходной файл',
-        'conversion_complete': '🎉 Конвертация завершена!',
-        'total': 'Всего модов:',
-        'file_saved': 'Файл сохранен в:',
-        'conversion_failed': 'Конвертация не удалась:',
-        'cached': '📦 Из кэша',
-    },
-    'es': {
-        'title': '🎮 Convertidor de Colecciones de Mods RimWorld',
-        'subtitle': 'Convertir colecciones de Steam Workshop a formato RimPy XML',
-        'toggle_theme': '🌓 Cambiar tema',
-        'log_font_size': 'Tamaño de fuente del registro:',
-        'clear_log': '🗑️ Limpiar registro',
-        'collection_url': '📋 URL de colección:',
-        'output_file': '💾 Archivo de salida:',
-        'steamcmd_path': '⚙️ Ruta SteamCMD:',
-        'browse': '📁 Examinar',
-        'statistics': '📊 Estadísticas de conversión',
-        'total_mods': 'Mods totales',
-        'successful': '✅ Exitoso',
-        'failed': '❌ Fallido',
-        'current': '🔄 Actual',
-        'start_conversion': '🚀 Iniciar conversión',
-        'converting': '⏳ Convirtiendo...',
-        'ready': 'Listo para convertir',
-        'conversion_log': '📝 Registro de conversión',
-        'language': '🌐 Idioma:',
-        'gemini_api_key': '🔑 Clave API Gemini(WIP):',
-        'translate_ui': 'Traducir UI',
-        'translate_logs': 'Traducir registros',
-        'error': 'Error',
-        'success': 'Éxito',
-        'enter_url': 'Por favor ingrese una URL de colección',
-        'specify_output': 'Por favor especifique un archivo de salida',
-        'conversion_complete': '🎉 ¡Conversión completada!',
-        'total': 'Mods totales:',
-        'file_saved': 'Archivo guardado en:',
-        'conversion_failed': 'Conversión fallida:',
-        'cached': '📦 En caché',
-    }
-}
+# Импорт модулей приложения
+from database import ModDatabase
+from steam_handler import SteamHandler, CollectionInfo, DownloadStatus
+from xml_processor import XmlProcessor, ModInfo
+from settings import SettingsManager, WorkMode
+from styles import get_main_stylesheet, get_log_html_style, COLORS
 
 
-class ConversionStats:
-    """Track conversion statistics"""
-    def __init__(self):
-        self.total_mods = 0
-        self.successful = 0
-        self.failed = 0
-        self.cached = 0
-        self.current = 0
+class WorkerThread(QThread):
+    """
+    Рабочий поток для асинхронной обработки модов.
+    Выполняет загрузку и обработку без блокировки UI.
+    """
     
-    def reset(self):
-        self.total_mods = 0
-        self.successful = 0
-        self.failed = 0
-        self.cached = 0
-        self.current = 0
-
-
-class GeminiTranslator:
-    """Handle translations using Gemini API"""
-    def __init__(self, api_key=None):
-        self.api_key = api_key
-        self.model = None
-        if api_key:
-            self.configure(api_key)
+    # Сигналы для обновления UI
+    log_signal = pyqtSignal(str, str)  # message, level
+    progress_signal = pyqtSignal(int, int)  # current, total
+    finished_signal = pyqtSignal(bool, str)  # success, message
+    stats_signal = pyqtSignal(int, int, int)  # processed, skipped, errors
     
-    def configure(self, api_key):
-        """Configure Gemini API"""
-        try:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
-            self.api_key = api_key
-            return True
-        except Exception as e:
-            print(f"Failed to configure Gemini: {e}")
-            return False
-    
-    def translate(self, text, target_language):
-        """Translate text to target language"""
-        if not self.model or not text.strip():
-            return text
-        
-        try:
-            prompt = f"Translate the following text to {target_language}. Only return the translation, nothing else:\n\n{text}"
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
-        except Exception as e:
-            print(f"Translation error: {e}")
-            return text
-
-
-class SteamCollectionToRimPy:
-    def __init__(self, steamcmd_path="steamcmd"):
+    def __init__(
+        self,
+        collection_url: str,
+        steamcmd_path: str,
+        output_path: str,
+        xml_filename: str,
+        work_mode: WorkMode,
+        download_path: str,
+        include_workshop_ids: bool = True,
+        verbose: bool = False
+    ):
+        super().__init__()
+        self.collection_url = collection_url
         self.steamcmd_path = steamcmd_path
-        self.workshop_path = Path.home() / "Steam/steamapps/workshop/content/294100"
-        self.temp_workshop_path = None
-        self.stats = ConversionStats()
-        self.cache_file = "mod_cache.json"
-        self.mod_cache = self.load_cache()
-
-    def load_cache(self):
-        """Load cache from file. Create empty if not exists or corrupted"""
-        if not os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'w', encoding='utf-8') as f:
-                    json.dump({}, f, ensure_ascii=False, indent=2)
-                print(f"✅ Created new cache file: {self.cache_file}")
-            except Exception as e:
-                print(f"❌ Failed to create cache file: {e}")
-                return {}
+        self.output_path = output_path
+        self.xml_filename = xml_filename
+        self.work_mode = work_mode
+        self.download_path = download_path
+        self.include_workshop_ids = include_workshop_ids
+        self.verbose = verbose
         
+        self._stop_requested = False
+        self.steam_handler: Optional[SteamHandler] = None
+        
+    def log(self, message: str, level: str = "INFO") -> None:
+        """Отправить сообщение в лог."""
+        self.log_signal.emit(message, level)
+    
+    def stop(self) -> None:
+        """Запросить остановку обработки."""
+        self._stop_requested = True
+        if self.steam_handler:
+            self.steam_handler.stop()
+    
+    def run(self) -> None:
+        """
+        Основной метод выполнения потока.
+        
+        Логика режимов:
+        - Режим 1 (PERSISTENT): моды остаются в папке загрузки
+        - Режим 2 (TEMPORARY): сначала выполняется обработка как в режиме 1,
+          затем все скачанные моды удаляются после успешной генерации XML
+        """
         try:
-            with open(self.cache_file, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if not content:
-                    return {}
-                return json.loads(content)
-        except json.JSONDecodeError as e:
-            print(f"❌ Cache file corrupted: {e}. Recreating...")
-            try:
-                with open(self.cache_file, 'w', encoding='utf-8') as f:
-                    json.dump({}, f, ensure_ascii=False, indent=2)
-            except Exception as write_err:
-                print(f"❌ Failed to recreate cache: {write_err}")
-            return {}
-        except Exception as e:
-            print(f"❌ Failed to read cache: {e}")
-            return {}
-
-    def save_cache(self):
-        """Save cache to file"""
-        try:
-            with open(self.cache_file, 'w', encoding='utf-8') as f:
-                json.dump(self.mod_cache, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Failed to save cache: {e}")
-
-    def get_package_id_cached(self, mod_id):
-        """Get packageId from cache"""
-        return self.mod_cache.get(mod_id)
-
-    def cache_package_id(self, mod_id, package_id):
-        """Cache packageId"""
-        self.mod_cache[mod_id] = package_id
-        self.save_cache()
-
-    def get_collection_mods(self, collection_url, log_callback=None):
-        """Extract mod IDs from Steam Workshop collection URL"""
-        def log(msg, tag="normal"):
-            if log_callback:
-                log_callback(msg, tag)
-        
-        log(f"🔍 Fetching collection from Steam...", "info")
-        log(f"   URL: {collection_url}", "info")
-        
-        collection_match = re.search(r'id=(\d+)', collection_url)
-        if not collection_match:
-            raise ValueError("Invalid collection URL - no ID found")
-        
-        collection_id = collection_match.group(1)
-        log(f"   Collection ID: {collection_id}", "info")
-        
-        api_url = f"https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/"
-        
-        try:
-            log(f"   Trying Steam API...", "info")
-            data = {
-                'collectioncount': 1,
-                'publishedfileids[0]': collection_id
-            }
-            
-            response = requests.post(api_url, data=data, timeout=10)
-            response.raise_for_status()
-            result = response.json()
-            
-            log(f"   API Response received", "info")
-            
-            if 'response' in result and 'collectiondetails' in result['response']:
-                collection_details = result['response']['collectiondetails'][0]
-                
-                result_code = collection_details.get('result', 0)
-                if result_code != 1:
-                    log(f"   ⚠️ API returned error code: {result_code}", "warning")
-                    raise Exception(f"API error code: {result_code}")
-                
-                if 'children' in collection_details:
-                    all_children = collection_details['children']
-                    log(f"   Found {len(all_children)} total items in collection", "info")
-                    
-                    mod_ids = []
-                    for child in all_children:
-                        filetype = child.get('filetype', 0)
-                        child_id = str(child['publishedfileid'])
-                        
-                        if filetype == 0:
-                            mod_ids.append(child_id)
-                    
-                    log(f"✅ Found {len(mod_ids)} mods via Steam API", "success")
-                    return mod_ids
-        
-        except Exception as e:
-            log(f"⚠️ Steam API failed: {str(e)}", "warning")
-            log(f"   Falling back to web scraping...", "info")
-        
-        try:
-            log(f"   Fetching webpage...", "info")
-            response = requests.get(collection_url, timeout=15)
-            response.raise_for_status()
-            
-            log(f"   Parsing HTML...", "info")
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            mod_ids = []
-            seen_ids = set([collection_id])
-            
-            collection_children = soup.find('div', id='sharedfiles_children')
-            
-            if collection_children:
-                items = collection_children.find_all('div', class_='collectionItem')
-                
-                for item in items:
-                    link = item.find('a', href=re.compile(r'steamcommunity\.com/sharedfiles/filedetails/\?id=\d+'))
-                    if link:
-                        mod_match = re.search(r'id=(\d+)', link['href'])
-                        if mod_match:
-                            mod_id = mod_match.group(1)
-                            if mod_id not in seen_ids:
-                                mod_ids.append(mod_id)
-                                seen_ids.add(mod_id)
-            else:
-                collection_items_area = soup.find('div', class_='collectionChildren')
-                if collection_items_area:
-                    items = collection_items_area.find_all('div', class_='collectionItem')
-                    
-                    for item in items:
-                        link = item.find('a', href=re.compile(r'sharedfiles/filedetails/\?id=\d+'))
-                        if link:
-                            mod_match = re.search(r'id=(\d+)', link['href'])
-                            if mod_match:
-                                mod_id = mod_match.group(1)
-                                if mod_id not in seen_ids:
-                                    mod_ids.append(mod_id)
-                                    seen_ids.add(mod_id)
-            
-            log(f"✅ Found {len(mod_ids)} mods via web scraping", "success")
-            
-            if len(mod_ids) == 0:
-                log(f"❌ ERROR: No mods found!", "error")
-            
-            return mod_ids
-            
-        except Exception as e:
-            log(f"❌ Web scraping failed: {str(e)}", "error")
-            raise
-
-    def get_mod_info(self, mod_id):
-        """Get mod information from Steam Workshop"""
-        url = f"https://steamcommunity.com/sharedfiles/filedetails/?id={mod_id}"
-        
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            title_elem = soup.find('div', class_='workshopItemTitle')
-            mod_name = title_elem.text.strip() if title_elem else f"Unknown Mod {mod_id}"
-            
-            return {
-                'id': mod_id,
-                'name': mod_name,
-                'packageId': f'steam.{mod_id}'.lower()
-            }
-        except Exception:
-            return {
-                'id': mod_id,
-                'name': f"Mod {mod_id}",
-                'packageId': f'steam.{mod_id}'.lower()
-            }
-
-    def download_mod_with_steamcmd(self, mod_id, workshop_dir, log_callback=None, stop_flag=None):
-        """Download a mod using SteamCMD silently (no console window)"""
-        cmd = [
-            self.steamcmd_path,
-            '+force_install_dir', str(workshop_dir),
-            '+login', 'anonymous',
-            '+workshop_download_item', '294100', mod_id,
-            '+quit'
-        ]
-        
-        if os.name == 'nt':
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags = subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0
-        else:
-            startupinfo = None
-
-        try:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-                startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            # Инициализация компонентов
+            db = ModDatabase()
+            self.steam_handler = SteamHandler(
+                steamcmd_path=self.steamcmd_path,
+                download_dir=self.download_path if self.download_path else None,
+                log_callback=self.log
             )
+            xml_processor = XmlProcessor(log_callback=self.log)
             
-            while True:
-                if stop_flag and stop_flag():
-                    process.terminate()
-                    try:
-                        process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                    if log_callback:
-                        log_callback(f"   🛑 Download stopped for mod {mod_id}", "warning")
-                    return False
-                
-                retcode = process.poll()
-                if retcode is not None:
-                    if retcode == 0:
-                        if log_callback:
-                            log_callback(f"   ✅ Download: SUCCESSFUL", "success")
-                        return True
-                    else:
-                        if log_callback:
-                            log_callback(f"   ❌ Download: FAILED (code {retcode})", "error")
-                        return False
-                
-                time.sleep(0.1)
-                
-        except Exception as e:
-            if log_callback:
-                log_callback(f"   ❌ Download: FAILED ({str(e)})", "error")
-            return False
-
-    def extract_package_id(self, mod_id, workshop_dir):
-        """Extract packageId from About.xml file"""
-        mod_path = Path(workshop_dir) / "steamapps/workshop/content/294100" / mod_id
-        about_xml = mod_path / "About/About.xml"
-        
-        if not about_xml.exists():
-            return f"steam.{mod_id}".lower()
-        
-        try:
-            tree = ET.parse(about_xml)
-            root = tree.getroot()
-            package_id_elem = root.find('packageId')
-            
-            if package_id_elem is not None and package_id_elem.text:
-                return package_id_elem.text.strip().lower()
-            
-            return f"steam.{mod_id}".lower()
-        except Exception:
-            return f"steam.{mod_id}".lower()
-
-    def create_rimpy_xml(self, mods, output_file):
-        """Create RimPy-compatible XML file"""
-        root = ET.Element('ModsConfigData')
-        version = ET.SubElement(root, 'version')
-        version.text = '1.5'
-        
-        active_mods = ET.SubElement(root, 'activeMods')
-        core = ET.SubElement(active_mods, 'li')
-        core.text = 'ludeon.rimworld'
-        
-        for mod in mods:
-            li = ET.SubElement(active_mods, 'li')
-            li.text = mod['packageId']
-        
-        known_expansions = ET.SubElement(root, 'knownExpansions')
-        expansions = ['ludeon.rimworld.royalty', 'ludeon.rimworld.ideology', 
-                     'ludeon.rimworld.biotech', 'ludeon.rimworld.anomaly']
-        for exp in expansions:
-            li = ET.SubElement(known_expansions, 'li')
-            li.text = exp
-        
-        tree = ET.ElementTree(root)
-        ET.indent(tree, space='  ')
-        tree.write(output_file, encoding='utf-8', xml_declaration=True)
-
-    def convert_collection(self, collection_url, output_file, log_callback=None, progress_callback=None, stats_callback=None):
-        """Main conversion method"""
-        def log(msg, tag="normal"):
-            if log_callback:
-                log_callback(msg, tag)
-        
-        self.stats.reset()
-        
-        mod_ids = self.get_collection_mods(collection_url, log_callback)
-        self.stats.total_mods = len(mod_ids)
-        
-        if stats_callback:
-            stats_callback(self.stats)
-        
-        self.temp_workshop_path = tempfile.mkdtemp(prefix="rimworld_workshop_")
-        log(f"\n📁 Using temporary directory...", "normal")
-        
-        try:
-            mods = []
-            for i, mod_id in enumerate(mod_ids, 1):
-                self.stats.current = i
-                
-                if progress_callback:
-                    progress_callback(i / self.stats.total_mods, f"Processing mod {i}/{self.stats.total_mods}")
-                
-                if stats_callback:
-                    stats_callback(self.stats)
-                
-                log(f"\n{'─'*60}", "separator")
-                log(f"[{i}/{self.stats.total_mods}] 🔄 Processing Mod ID: {mod_id}", "header")
-                log(f"{'─'*60}", "separator")
-                
-                cached_package_id = self.get_package_id_cached(mod_id)
-                if cached_package_id:
-                    mod_info = self.get_mod_info(mod_id)
-                    mod_info['packageId'] = cached_package_id
-                    mods.append(mod_info)
-                    log(f"   📦 Cached: {cached_package_id}", "success")
-                    self.stats.cached += 1
-                    self.stats.successful += 1
-                    continue
-
-                mod_info = self.get_mod_info(mod_id)
-                log(f"   📝 Mod Name: {mod_info['name']}", "info")
-
-                success = self.download_mod_with_steamcmd(mod_id, self.temp_workshop_path, log_callback)
-                
-                if success:
-                    package_id = self.extract_package_id(mod_id, self.temp_workshop_path)
-                    mod_info['packageId'] = package_id
-                    self.cache_package_id(mod_id, package_id)
-                    log(f"   🔖 Package ID: {package_id}", "package")
-                    self.stats.successful += 1
-                else:
-                    package_id = f"steam.{mod_id}".lower()
-                    mod_info['packageId'] = package_id
-                    log(f"   🔖 Package ID: {package_id} (fallback)", "warning")
-                    self.stats.failed += 1
-                
-                mods.append(mod_info)
-            
-            self.create_rimpy_xml(mods, output_file)
-            log(f"\n{'='*60}", "separator")
-            log(f"✅ SUCCESS! XML file created", "success")
-            log(f"📊 Total mods processed: {len(mods)}", "info")
-            log(f"✅ Downloaded: {self.stats.successful - self.stats.cached}", "success")
-            log(f"📦 Cached: {self.stats.cached}", "success")
-            log(f"❌ Failed: {self.stats.failed}", "error")
-            log(f"📄 File saved: {output_file}", "info")
-            log(f"{'='*60}", "separator")
-            
-            return mods
-            
-        finally:
-            if self.temp_workshop_path and os.path.exists(self.temp_workshop_path):
-                log(f"\n🧹 Cleaning up temporary files...", "normal")
-                shutil.rmtree(self.temp_workshop_path)
-
-
-class ModernConverterGUI:
-    def __init__(self):
-        self.root = ctk.CTk()
-        self.root.title("RimWorld Mod Collection Converter")
-        self.root.geometry("1200x800")
-
-        self.offset_x = 0
-        self.offset_y = 0
-        self.settings = self.load_settings()
-        self.log_font_size = self.settings.get('log_font_size', 11)
-        self.current_language = self.settings.get('language', 'en')
-        self.translate_logs_enabled = self.settings.get('translate_logs', False)
-        self.stats = ConversionStats()
-        
-        gemini_key = self.settings.get('gemini_api_key', '')
-        self.translator = GeminiTranslator(gemini_key if gemini_key else None)
-
-        self.root.grid_columnconfigure(0, weight=3)
-        self.root.grid_columnconfigure(1, weight=1)
-        self.root.grid_rowconfigure(0, weight=1)
-
-        self.setup_ui()
-        self.apply_saved_settings()
-        self.update_ui_language()
-
-    def t(self, key):
-        """Get translation for key"""
-        return TRANSLATIONS.get(self.current_language, TRANSLATIONS['en']).get(key, key)
-        
-    def start_move(self, event):
-        self.offset_x = event.x
-        self.offset_y = event.y
-
-    def on_move(self, event):
-        x = self.root.winfo_x() + event.x - self.offset_x
-        y = self.root.winfo_y() + event.y - self.offset_y
-        self.root.geometry(f"+{x}+{y}")
-        
-    def load_settings(self):
-        try:
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r') as f:
-                    return json.load(f)
-        except Exception as e:
-            print(f"Error loading settings: {e}")
-        return {}
-    
-    def save_settings(self):
-        settings = {
-            'url': self.url_entry.get(),
-            'output': self.output_entry.get(),
-            'steamcmd': self.steamcmd_entry.get(),
-            'log_font_size': self.log_font_size,
-            'theme': ctk.get_appearance_mode(),
-            'language': self.current_language,
-            'gemini_api_key': self.gemini_entry.get(),
-            'translate_logs': self.translate_logs_var.get()
-        }
-        try:
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(settings, f)
-        except Exception as e:
-            print(f"Error saving settings: {e}")
-    
-    def apply_saved_settings(self):
-        if 'url' in self.settings and self.settings['url']:
-            self.url_entry.insert(0, self.settings['url'])
-        if 'output' in self.settings and self.settings['output']:
-            self.output_entry.delete(0, 'end')
-            self.output_entry.insert(0, self.settings['output'])
-        if 'steamcmd' in self.settings and self.settings['steamcmd']:
-            self.steamcmd_entry.delete(0, 'end')
-            self.steamcmd_entry.insert(0, self.settings['steamcmd'])
-        if 'theme' in self.settings:
-            ctk.set_appearance_mode(self.settings['theme'])
-        if 'gemini_api_key' in self.settings and self.settings['gemini_api_key']:
-            self.gemini_entry.insert(0, self.settings['gemini_api_key'])
-        
-    def setup_ui(self):
-        left_panel = ctk.CTkFrame(self.root, corner_radius=0)
-        left_panel.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
-        left_panel.grid_columnconfigure(0, weight=1)
-        left_panel.grid_rowconfigure(7, weight=1)
-        
-        header_frame = ctk.CTkFrame(left_panel, fg_color=("#2b2b2b", "#1a1a1a"), corner_radius=0)
-        header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
-        
-        header_frame.bind('<Button-1>', self.start_move)
-        header_frame.bind('<B1-Motion>', self.on_move)
-        
-        self.title_label = ctk.CTkLabel(
-            header_frame,
-            text=self.t('title'),
-            font=ctk.CTkFont(size=24, weight="bold")
-        )
-        self.title_label.pack(pady=(20, 5))
-        self.title_label.bind('<Button-1>', self.start_move)
-        self.title_label.bind('<B1-Motion>', self.on_move)
-        
-        self.subtitle_label = ctk.CTkLabel(
-            header_frame,
-            text=self.t('subtitle'),
-            font=ctk.CTkFont(size=13),
-            text_color=("gray70", "gray50")
-        )
-        self.subtitle_label.pack(pady=(0, 20))
-        self.subtitle_label.bind('<Button-1>', self.start_move)
-        self.subtitle_label.bind('<B1-Motion>', self.on_move)
-        
-        controls_frame = ctk.CTkFrame(left_panel, corner_radius=10)
-        controls_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(20, 10))
-        
-        self.theme_btn = ctk.CTkButton(
-            controls_frame,
-            text=self.t('toggle_theme'),
-            command=self.toggle_theme,
-            width=120,
-            height=30,
-            font=ctk.CTkFont(size=11)
-        )
-        self.theme_btn.pack(side="left", padx=5, pady=10)
-        
-        self.font_label = ctk.CTkLabel(controls_frame, text=self.t('log_font_size'), font=ctk.CTkFont(size=11))
-        self.font_label.pack(side="left", padx=(15, 5), pady=10)
-        
-        font_minus = ctk.CTkButton(
-            controls_frame,
-            text="−",
-            command=lambda: self.change_font_size(-1),
-            width=30,
-            height=30,
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        font_minus.pack(side="left", padx=2, pady=10)
-        
-        self.font_size_label = ctk.CTkLabel(
-            controls_frame,
-            text=str(self.log_font_size),
-            font=ctk.CTkFont(size=11, weight="bold"),
-            width=30
-        )
-        self.font_size_label.pack(side="left", padx=5, pady=10)
-        
-        font_plus = ctk.CTkButton(
-            controls_frame,
-            text="+",
-            command=lambda: self.change_font_size(1),
-            width=30,
-            height=30,
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        font_plus.pack(side="left", padx=2, pady=10)
-        
-        self.clear_log_btn = ctk.CTkButton(
-            controls_frame,
-            text=self.t('clear_log'),
-            command=self.clear_log,
-            width=100,
-            height=30,
-            font=ctk.CTkFont(size=11)
-        )
-        self.clear_log_btn.pack(side="left", padx=(15, 5), pady=10)
-        
-        lang_frame = ctk.CTkFrame(left_panel, corner_radius=10)
-        lang_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 10))
-        lang_frame.grid_columnconfigure(1, weight=1)
-        
-        lang_label = ctk.CTkLabel(lang_frame, text=self.t('language'), font=ctk.CTkFont(size=12, weight="bold"))
-        lang_label.grid(row=0, column=0, sticky="w", padx=20, pady=(15, 10))
-        
-        self.language_menu = ctk.CTkOptionMenu(
-            lang_frame,
-            values=["English", "Русский", "Español"],
-            command=self.change_language,
-            height=35,
-            font=ctk.CTkFont(size=12)
-        )
-        self.language_menu.grid(row=0, column=1, sticky="w", padx=(10, 20), pady=(15, 10))
-        self.language_menu.set({"en": "English", "ru": "Русский", "es": "Españол"}[self.current_language])
-        
-        gemini_label = ctk.CTkLabel(lang_frame, text=self.t('gemini_api_key'), font=ctk.CTkFont(size=12, weight="bold"))
-        gemini_label.grid(row=1, column=0, sticky="w", padx=20, pady=(10, 15))
-        
-        self.gemini_entry = ctk.CTkEntry(
-            lang_frame,
-            placeholder_text="Enter Gemini API key for translation...",
-            height=35,
-            font=ctk.CTkFont(size=11)
-        )
-        self.gemini_entry.grid(row=1, column=1, sticky="ew", padx=(10, 10), pady=(10, 10))
-        
-        self.translate_logs_var = ctk.BooleanVar(value=self.translate_logs_enabled)
-        self.translate_logs_check = ctk.CTkCheckBox(
-            lang_frame,
-            text=self.t('translate_logs'),
-            variable=self.translate_logs_var,
-            font=ctk.CTkFont(size=11)
-        )
-        self.translate_logs_check.grid(row=1, column=2, sticky="w", padx=(10, 20), pady=(10, 10))
-        
-        input_frame = ctk.CTkFrame(left_panel, corner_radius=10)
-        input_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
-        input_frame.grid_columnconfigure(1, weight=1)
-        
-        self.url_label = ctk.CTkLabel(input_frame, text=self.t('collection_url'), font=ctk.CTkFont(size=14, weight="bold"))
-        self.url_label.grid(row=0, column=0, sticky="w", padx=20, pady=(20, 10))
-        
-        self.url_entry = ctk.CTkEntry(
-            input_frame,
-            placeholder_text="https://steamcommunity.com/sharedfiles/filedetails/?id=...",
-            height=40,
-            font=ctk.CTkFont(size=12)
-        )
-        self.url_entry.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
-        self.url_entry.bind('<Control-v>', lambda e: self.paste_to_entry(self.url_entry))
-        self.url_entry.bind('<Control-V>', lambda e: self.paste_to_entry(self.url_entry))
-        
-        self.output_label = ctk.CTkLabel(input_frame, text=self.t('output_file'), font=ctk.CTkFont(size=14, weight="bold"))
-        self.output_label.grid(row=2, column=0, sticky="w", padx=20, pady=(10, 10))
-        
-        output_container = ctk.CTkFrame(input_frame, fg_color="transparent")
-        output_container.grid(row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
-        output_container.grid_columnconfigure(0, weight=1)
-        
-        self.output_entry = ctk.CTkEntry(output_container, placeholder_text="ModList.xml", height=40, font=ctk.CTkFont(size=12))
-        self.output_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        self.output_entry.insert(0, "ModList.xml")
-        self.output_entry.bind('<Control-v>', lambda e: self.paste_to_entry(self.output_entry))
-        self.output_entry.bind('<Control-V>', lambda e: self.paste_to_entry(self.output_entry))
-        
-        self.browse_btn = ctk.CTkButton(
-            output_container,
-            text=self.t('browse'),
-            command=self.browse_output_file,
-            width=120,
-            height=40,
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        self.browse_btn.grid(row=0, column=1)
-        
-        self.steamcmd_label = ctk.CTkLabel(input_frame, text=self.t('steamcmd_path'), font=ctk.CTkFont(size=14, weight="bold"))
-        self.steamcmd_label.grid(row=4, column=0, sticky="w", padx=20, pady=(10, 10))
-        
-        steamcmd_container = ctk.CTkFrame(input_frame, fg_color="transparent")
-        steamcmd_container.grid(row=5, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
-        steamcmd_container.grid_columnconfigure(0, weight=1)
-        
-        self.steamcmd_entry = ctk.CTkEntry(steamcmd_container, placeholder_text="steamcmd", height=40, font=ctk.CTkFont(size=12))
-        self.steamcmd_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        self.steamcmd_entry.insert(0, "steamcmd")
-        self.steamcmd_entry.bind('<Control-v>', lambda e: self.paste_to_entry(self.steamcmd_entry))
-        self.steamcmd_entry.bind('<Control-V>', lambda e: self.paste_to_entry(self.steamcmd_entry))
-        
-        self.steamcmd_browse_btn = ctk.CTkButton(
-            steamcmd_container,
-            text=self.t('browse'),
-            command=self.browse_steamcmd,
-            width=120,
-            height=40,
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        self.steamcmd_browse_btn.grid(row=0, column=1)
-        
-        stats_frame = ctk.CTkFrame(left_panel, corner_radius=10)
-        stats_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 10))
-        
-        self.stats_title = ctk.CTkLabel(stats_frame, text=self.t('statistics'), font=ctk.CTkFont(size=14, weight="bold"))
-        self.stats_title.pack(pady=(15, 10))
-        
-        stats_container = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        stats_container.pack(fill="x", padx=20, pady=(0, 15))
-        
-        total_frame = ctk.CTkFrame(stats_container, corner_radius=8)
-        total_frame.pack(side="left", expand=True, fill="x", padx=5)
-        
-        self.total_mods_label = ctk.CTkLabel(total_frame, text=self.t('total_mods'), font=ctk.CTkFont(size=11))
-        self.total_mods_label.pack(pady=(10, 2))
-        self.total_label = ctk.CTkLabel(
-            total_frame,
-            text="0",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color=("#3498db", "#5dade2")
-        )
-        self.total_label.pack(pady=(0, 10))
-        
-        success_frame = ctk.CTkFrame(stats_container, corner_radius=8)
-        success_frame.pack(side="left", expand=True, fill="x", padx=5)
-        
-        self.successful_label_text = ctk.CTkLabel(success_frame, text=self.t('successful'), font=ctk.CTkFont(size=11))
-        self.successful_label_text.pack(pady=(10, 2))
-        self.success_label = ctk.CTkLabel(
-            success_frame,
-            text="0",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color=("#52be80", "#7dcea0")
-        )
-        self.success_label.pack(pady=(0, 10))
-        
-        failed_frame = ctk.CTkFrame(stats_container, corner_radius=8)
-        failed_frame.pack(side="left", expand=True, fill="x", padx=5)
-        
-        self.failed_label_text = ctk.CTkLabel(failed_frame, text=self.t('failed'), font=ctk.CTkFont(size=11))
-        self.failed_label_text.pack(pady=(10, 2))
-        self.failed_label = ctk.CTkLabel(
-            failed_frame,
-            text="0",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color=("#e74c3c", "#ec7063")
-        )
-        self.failed_label.pack(pady=(0, 10))
-        
-        current_frame = ctk.CTkFrame(stats_container, corner_radius=8)
-        current_frame.pack(side="left", expand=True, fill="x", padx=5)
-        
-        self.current_label_text = ctk.CTkLabel(current_frame, text=self.t('current'), font=ctk.CTkFont(size=11))
-        self.current_label_text.pack(pady=(10, 2))
-        self.current_label = ctk.CTkLabel(
-            current_frame,
-            text="0",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color=("#f39c12", "#f8c471")
-        )
-        self.current_label.pack(pady=(0, 10))
-        
-        self.convert_btn = ctk.CTkButton(
-            left_panel,
-            text=self.t('start_conversion'),
-            command=self.start_conversion,
-            height=50,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            fg_color=("#1f538d", "#14375e"),
-            hover_color=("#1a4570", "#0f2944")
-        )
-        self.convert_btn.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 20))
-        
-        progress_frame = ctk.CTkFrame(left_panel, corner_radius=10)
-        progress_frame.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 20))
-        
-        self.progress_label = ctk.CTkLabel(progress_frame, text=self.t('ready'), font=ctk.CTkFont(size=13))
-        self.progress_label.pack(pady=(15, 5))
-        
-        self.progress_bar = ctk.CTkProgressBar(progress_frame, height=20)
-        self.progress_bar.pack(fill="x", padx=20, pady=(5, 10))
-        self.progress_bar.set(0)
-        
-        self.progress_percent = ctk.CTkLabel(progress_frame, text="0%", font=ctk.CTkFont(size=12, weight="bold"))
-        self.progress_percent.pack(pady=(0, 15))
-        
-        log_panel = ctk.CTkFrame(self.root, corner_radius=10)
-        log_panel.grid(row=0, column=1, sticky="nsew", padx=(0, 20), pady=20)
-        log_panel.grid_columnconfigure(0, weight=1)
-        log_panel.grid_rowconfigure(1, weight=1)
-        
-        self.log_header = ctk.CTkLabel(log_panel, text=self.t('conversion_log'), font=ctk.CTkFont(size=14, weight="bold"))
-        self.log_header.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 10))                                                                                     
-        self.log_text = ctk.CTkTextbox(
-            log_panel,
-            font=ctk.CTkFont(family="Consolas", size=self.log_font_size),
-            wrap="word"
-        )
-        self.log_text.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
-        
-        self.log_text._textbox.tag_config("header", foreground="#5DADE2")
-        self.log_text._textbox.tag_config("success", foreground="#52BE80")
-        self.log_text._textbox.tag_config("error", foreground="#E74C3C")
-        self.log_text._textbox.tag_config("warning", foreground="#F39C12")
-        self.log_text._textbox.tag_config("info", foreground="#85C1E9")
-        self.log_text._textbox.tag_config("package", foreground="#BB8FCE")
-        self.log_text._textbox.tag_config("separator", foreground="#566573")
-    def change_language(self, choice):
-        """Change UI language"""
-        lang_map = {"English": "en", "Русский": "ru", "Español": "es"}
-        self.current_language = lang_map.get(choice, "en")
-        self.save_settings()
-        self.update_ui_language()
-
-    def update_ui_language(self):
-        """Update all UI text to current language"""
-        self.title_label.configure(text=self.t('title'))
-        self.subtitle_label.configure(text=self.t('subtitle'))
-        self.theme_btn.configure(text=self.t('toggle_theme'))
-        self.font_label.configure(text=self.t('log_font_size'))
-        self.clear_log_btn.configure(text=self.t('clear_log'))
-        self.url_label.configure(text=self.t('collection_url'))
-        self.output_label.configure(text=self.t('output_file'))
-        self.steamcmd_label.configure(text=self.t('steamcmd_path'))
-        self.browse_btn.configure(text=self.t('browse'))
-        self.steamcmd_browse_btn.configure(text=self.t('browse'))
-        self.stats_title.configure(text=self.t('statistics'))
-        self.total_mods_label.configure(text=self.t('total_mods'))
-        self.successful_label_text.configure(text=self.t('successful'))
-        self.failed_label_text.configure(text=self.t('failed'))
-        self.current_label_text.configure(text=self.t('current'))
-        self.convert_btn.configure(text=self.t('start_conversion'))
-        self.progress_label.configure(text=self.t('ready'))
-        self.log_header.configure(text=self.t('conversion_log'))
-        self.translate_logs_check.configure(text=self.t('translate_logs'))
-
-    def toggle_theme(self):
-        current = ctk.get_appearance_mode()
-        new_theme = "light" if current == "dark" else "dark"
-        ctk.set_appearance_mode(new_theme)
-        self.save_settings()
-
-    def change_font_size(self, delta):
-        self.log_font_size = max(8, min(20, self.log_font_size + delta))
-        self.font_size_label.configure(text=str(self.log_font_size))
-        self.log_text.configure(font=ctk.CTkFont(family="Consolas", size=self.log_font_size))
-        self.save_settings()
-
-    def clear_log(self):
-        self.log_text.delete("1.0", "end")
-
-    def browse_output_file(self):
-        filename = filedialog.asksaveasfilename(
-            title="Save XML File",
-            defaultextension=".xml",
-            filetypes=[("XML files", "*.xml"), ("All files", "*.*")]
-        )
-        if filename:
-            self.output_entry.delete(0, "end")
-            self.output_entry.insert(0, filename)
-            self.save_settings()
-
-    def browse_steamcmd(self):
-        filename = filedialog.askopenfilename(
-            title="Select SteamCMD executable",
-            filetypes=[("Executable files", "*.exe"), ("All files", "*.*")]
-        )
-        if filename:
-            self.steamcmd_entry.delete(0, "end")
-            self.steamcmd_entry.insert(0, filename)
-            self.save_settings()
-
-    def paste_to_entry(self, entry):
-        try:
-            clipboard_content = self.root.clipboard_get()
-            try:
-                entry.delete("sel.first", "sel.last")
-            except:
-                pass
-            entry.insert("insert", clipboard_content)
-            return "break"
-        except:
-            pass
-        return "break"
-
-    def log_message(self, message, tag="normal"):
-        if self.translate_logs_var.get() and self.current_language != 'en':
-            api_key = self.gemini_entry.get().strip()
-            if api_key and self.translator.api_key != api_key:
-                self.translator.configure(api_key)
-                self.save_settings()
-            
-            if self.translator.model:
-                lang_names = {'ru': 'Russian', 'es': 'Spanish'}
-                target_lang = lang_names.get(self.current_language, 'English')
-                message = self.translator.translate(message, target_lang)
-        
-        current_pos = self.log_text.index("end-1c")
-        self.log_text.insert("end", message + "\n")
-        
-        if tag != "normal":
-            line_start = current_pos
-            line_end = self.log_text.index("end-1c")
-            self.log_text._textbox.tag_add(tag, line_start, line_end)
-        
-        self.log_text.see("end")
-
-    def update_progress(self, value, text):
-        self.progress_bar.set(value)
-        self.progress_label.configure(text=text)
-        self.progress_percent.configure(text=f"{int(value * 100)}%")
-
-    def update_stats(self, stats):
-        self.total_label.configure(text=str(stats.total_mods))
-        self.success_label.configure(text=str(stats.successful))
-        self.failed_label.configure(text=str(stats.failed))
-        self.current_label.configure(text=str(stats.current))
-
-    def start_conversion(self):
-        url = self.url_entry.get().strip()
-        output_file = self.output_entry.get().strip()
-        steamcmd_path = self.steamcmd_entry.get().strip()
-        
-        if not url:
-            messagebox.showerror(self.t('error'), self.t('enter_url'))
-            return
-        
-        if not output_file:
-            messagebox.showerror(self.t('error'), self.t('specify_output'))
-            return
-        
-        output_path = Path(output_file)
-        if not output_path.parent.exists():
-            try:
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                messagebox.showerror(self.t('error'), f"Cannot create directory: {e}")
+            # Проверка steamcmd
+            valid, msg = self.steam_handler.validate_steamcmd()
+            if not valid:
+                self.finished_signal.emit(False, msg)
                 return
-        
-        self.save_settings()
-        self.log_text.delete("1.0", "end")
-        self.progress_bar.set(0)
-        self.update_progress(0, self.t('converting'))
-        
-        self.stats.reset()
-        self.update_stats(self.stats)
-        
-        self.convert_btn.configure(state="disabled", text=self.t('converting'))
-        
-        def run_conversion():
+            
+            # Создание директории загрузки
+            if not self.steam_handler.ensure_download_dir_exists():
+                self.finished_signal.emit(False, "Не удалось создать директорию загрузки")
+                return
+            
+            self.log(f"Папка загрузки модов: {self.steam_handler.download_dir}", "INFO")
+            self.log("Начало обработки коллекции...", "INFO")
+            
+            # Получение списка модов из коллекции
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
             try:
-                converter = SteamCollectionToRimPy(steamcmd_path=steamcmd_path)
-                mods = converter.convert_collection(
-                    url, 
-                    output_file, 
-                    self.log_message,
-                    lambda v, t: self.root.after(0, lambda: self.update_progress(v, t)),
-                    lambda s: self.root.after(0, lambda: self.update_stats(s))
+                collection_info = loop.run_until_complete(
+                    self.steam_handler.fetch_collection_mods(self.collection_url)
+                )
+            except Exception as e:
+                self.finished_signal.emit(False, f"Ошибка получения коллекции: {str(e)}")
+                return
+            finally:
+                loop.close()
+            
+            mod_ids = collection_info.mod_ids
+            total_mods = len(mod_ids)
+            
+            self.log(f"Найдено {total_mods} модов в коллекции", "SUCCESS")
+            
+            # Статистика
+            processed = 0
+            skipped = 0
+            errors = 0
+            
+            # Список успешно обработанных модов
+            mod_infos: List[ModInfo] = []
+            
+            # Список загруженных модов для последующего удаления (режим 2)
+            downloaded_mods: List[str] = []
+            
+            # Обработка каждого мода
+            for i, workshop_id in enumerate(mod_ids):
+                if self._stop_requested:
+                    self.log("Обработка остановлена пользователем", "WARNING")
+                    break
+                
+                self.progress_signal.emit(i + 1, total_mods)
+                
+                # В режиме 2 пропускаем проверку кэша - сначала обрабатываем все моды
+                # (режим 2 вызывает логику режима 1 для скачивания и обработки)
+                if self.work_mode == WorkMode.TEMPORARY:
+                    cached_package_id = db.get_package_id(workshop_id)
+                    if cached_package_id:
+                        self.log(
+                            f"Мод {workshop_id} найден в кэше БД: {cached_package_id}",
+                            "DEBUG" if self.verbose else "INFO"
+                        )
+                        mod_infos.append(ModInfo(
+                            workshop_id=workshop_id,
+                            package_id=cached_package_id
+                        ))
+                        skipped += 1
+                        self.stats_signal.emit(processed, skipped, errors)
+                        continue
+                
+                # Проверка наличия загруженного мода
+                if self.steam_handler.is_mod_downloaded(workshop_id):
+                    mod_path = self.steam_handler.get_mod_path(workshop_id)
+                    mod_info = xml_processor.extract_package_id(mod_path, workshop_id)
+                    
+                    if mod_info:
+                        self.log(
+                            f"Мод {workshop_id} уже загружен: {mod_info.package_id}",
+                            "INFO"
+                        )
+                        mod_infos.append(mod_info)
+                        
+                        # Сохраняем в БД для режима 2
+                        if self.work_mode == WorkMode.TEMPORARY:
+                            db.add_mod(workshop_id, mod_info.package_id, self.collection_url)
+                        
+                        skipped += 1
+                        self.stats_signal.emit(processed, skipped, errors)
+                        continue
+                
+                # Загрузка мода
+                result = self.steam_handler.download_mod(workshop_id)
+                
+                if result.status == DownloadStatus.SUCCESS:
+                    # Запоминаем загруженный мод для возможного удаления в режиме 2
+                    downloaded_mods.append(workshop_id)
+                    
+                    # Извлечение packageId
+                    mod_info = xml_processor.extract_package_id(
+                        result.mod_path,
+                        workshop_id
+                    )
+                    
+                    if mod_info:
+                        mod_infos.append(mod_info)
+                        
+                        # Сохранение в базу данных
+                        db.add_mod(
+                            workshop_id,
+                            mod_info.package_id,
+                            self.collection_url
+                        )
+                        
+                        processed += 1
+                        self.log(
+                            f"Обработан мод {workshop_id}: {mod_info.package_id}",
+                            "SUCCESS"
+                        )
+                    else:
+                        errors += 1
+                        self.log(
+                            f"Не удалось извлечь packageId для мода {workshop_id}",
+                            "WARNING"
+                        )
+                else:
+                    errors += 1
+                    self.log(
+                        f"Ошибка загрузки мода {workshop_id}: {result.error_message}",
+                        "ERROR"
+                    )
+                
+                self.stats_signal.emit(processed, skipped, errors)
+            
+            # Генерация XML
+            xml_generation_success = False
+            result_path = ""
+            
+            if mod_infos and not self._stop_requested:
+                self.log(f"Генерация XML файла ({len(mod_infos)} модов)...", "INFO")
+                
+                xml_content = xml_processor.generate_rimpy_xml_extended(
+                    mod_infos,
+                    list_name=self.xml_filename,
+                    include_workshop_ids=self.include_workshop_ids
                 )
                 
-                self.root.after(0, lambda: self.conversion_complete(True, converter.stats, output_file))
-            except Exception as e:
-                error_message = str(e)
-                self.root.after(0, lambda err=error_message: self.conversion_complete(False, self.stats, err))
+                success, result_path = xml_processor.save_xml(
+                    xml_content,
+                    self.output_path,
+                    self.xml_filename
+                )
+                
+                if success:
+                    self.log(f"XML файл сохранён: {result_path}", "SUCCESS")
+                    xml_generation_success = True
+                else:
+                    self.log(f"Ошибка сохранения XML: {result_path}", "ERROR")
+            elif self._stop_requested:
+                self.log("Обработка была остановлена пользователем", "WARNING")
+            else:
+                self.log("Не удалось обработать ни одного мода", "WARNING")
+            
+            # Удаление модов в режиме 2 после успешной генерации XML
+            if self.work_mode == WorkMode.TEMPORARY and xml_generation_success:
+                self._cleanup_downloaded_mods(downloaded_mods, processed)
+            
+            # Финальный сигнал
+            if xml_generation_success:
+                self.finished_signal.emit(
+                    True,
+                    f"Обработка завершена!\n"
+                    f"Обработано: {processed}\n"
+                    f"Пропущено (кэш): {skipped}\n"
+                    f"Ошибок: {errors}\n"
+                    f"Файл: {result_path}"
+                )
+            elif self._stop_requested:
+                self.finished_signal.emit(False, "Обработка была остановлена")
+            else:
+                self.finished_signal.emit(False, "Не удалось обработать ни одного мода")
+                
+        except Exception as e:
+            self.log(f"Критическая ошибка: {str(e)}", "ERROR")
+            self.finished_signal.emit(False, f"Критическая ошибка: {str(e)}")
+    
+    def _cleanup_downloaded_mods(self, downloaded_mods: List[str], processed_count: int) -> None:
+        """
+        Удаление скачанных модов после успешной обработки (режим 2).
         
-        thread = threading.Thread(target=run_conversion, daemon=True)
-        thread.start()
+        Args:
+            downloaded_mods: Список workshop ID модов для удаления
+            processed_count: Количество успешно обработанных модов
+        """
+        if not downloaded_mods:
+            self.log("Нет модов для удаления", "INFO")
+            return
+        
+        self.log("=" * 50, "INFO")
+        self.log("НАЧАЛО УДАЛЕНИЯ СКАЧАННЫХ МОДОВ (Режим 2)", "INFO")
+        self.log("=" * 50, "INFO")
+        
+        deleted_count = 0
+        failed_count = 0
+        
+        for workshop_id in downloaded_mods:
+            mod_path = self.steam_handler.get_mod_path(workshop_id)
+            if mod_path and os.path.exists(mod_path):
+                self.log(f"Удаление мода {workshop_id}...", "INFO")
+                self.log(f"  Путь: {mod_path}", "DEBUG")
+                
+                try:
+                    # Получаем список файлов для логирования
+                    files_to_delete = []
+                    for root, dirs, files in os.walk(mod_path):
+                        for file in files:
+                            full_path = os.path.join(root, file)
+                            files_to_delete.append(os.path.relpath(full_path, mod_path))
+                    
+                    if files_to_delete:
+                        self.log(f"  Файлы для удаления ({len(files_to_delete)}):", "DEBUG")
+                        for rel_path in files_to_delete[:5]:  # Показываем первые 5
+                            self.log(f"    - {rel_path}", "DEBUG")
+                        if len(files_to_delete) > 5:
+                            self.log(f"    ... и ещё {len(files_to_delete) - 5} файлов", "DEBUG")
+                    
+                    # Удаляем мод
+                    if self.steam_handler.delete_mod(workshop_id):
+                        self.log(f"Мод {workshop_id} успешно удалён", "SUCCESS")
+                        deleted_count += 1
+                    else:
+                        self.log(f"Не удалось удалить мод {workshop_id}", "WARNING")
+                        failed_count += 1
+                        
+                except Exception as e:
+                    self.log(f"Ошибка при удалении мода {workshop_id}: {str(e)}", "ERROR")
+                    failed_count += 1
+            else:
+                self.log(f"Мод {workshop_id} не найден для удаления (уже удалён?)", "DEBUG")
+                deleted_count += 1  # Считаем как удалённый
+        
+        self.log("=" * 50, "INFO")
+        self.log("УДАЛЕНИЕ МОДОВ ЗАВЕРШЕНО", "INFO")
+        self.log(f"  Удалено: {deleted_count}", "SUCCESS")
+        if failed_count > 0:
+            self.log(f"  Не удалось удалить: {failed_count}", "WARNING")
+        self.log("=" * 50, "INFO")
 
 
-    def conversion_complete(self, success, stats, message):
-        self.convert_btn.configure(state="normal", text=self.t('start_conversion'))
+class MainWindow(QMainWindow):
+    """
+    Главное окно приложения RimWorld Mod Collector.
+    Реализует тёмный неоновый интерфейс с разделением на панели.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Инициализация менеджера настроек
+        self.settings = SettingsManager()
+        
+        # Рабочий поток
+        self.worker: Optional[WorkerThread] = None
+        
+        # Настройка окна
+        self.setWindowTitle("RimWorld Mod Collector")
+        self.setMinimumSize(1000, 600)
+        self.resize(
+            self.settings.settings.window_width,
+            self.settings.settings.window_height
+        )
+        
+        # Применение стилей
+        self.setStyleSheet(get_main_stylesheet())
+        
+        # Создание интерфейса
+        self._create_ui()
+        
+        # Загрузка сохранённых настроек
+        self._load_settings()
+    
+    def _create_ui(self) -> None:
+        """Создание пользовательского интерфейса."""
+        # Центральный виджет
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # Главный layout
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(15)
+        
+        # Создание сплиттера для изменения размеров панелей
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # Левая панель (75%)
+        left_panel = self._create_left_panel()
+        splitter.addWidget(left_panel)
+        
+        # Правая панель (25%)
+        right_panel = self._create_right_panel()
+        splitter.addWidget(right_panel)
+        
+        # Установка пропорций
+        splitter.setSizes([750, 250])
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        
+        main_layout.addWidget(splitter)
+    
+    def _create_left_panel(self) -> QWidget:
+        """Создание левой панели с настройками."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(15)
+        
+        # Заголовок
+        title = QLabel("🎮 RimWorld Mod Collector")
+        title.setProperty("class", "title")
+        title.setStyleSheet(f"""
+            font-size: 24px;
+            font-weight: bold;
+            color: {COLORS["neon_cyan"]};
+            padding: 10px;
+        """)
+        layout.addWidget(title)
+        
+        # Группа: Ссылка на коллекцию
+        collection_group = QGroupBox("📦 Steam Workshop Коллекция")
+        collection_layout = QVBoxLayout(collection_group)
+        
+        self.collection_input = QLineEdit()
+        self.collection_input.setPlaceholderText(
+            "Вставьте ссылку на коллекцию Steam Workshop..."
+        )
+        collection_layout.addWidget(self.collection_input)
+        
+        layout.addWidget(collection_group)
+        
+        # Группа: Настройки вывода
+        output_group = QGroupBox("💾 Настройки сохранения")
+        output_layout = QVBoxLayout(output_group)
+        
+        # Путь сохранения
+        path_layout = QHBoxLayout()
+        self.output_path_input = QLineEdit()
+        self.output_path_input.setPlaceholderText("Путь для сохранения XML файла...")
+        path_layout.addWidget(self.output_path_input)
+        
+        browse_btn = QPushButton("📁 Обзор")
+        browse_btn.clicked.connect(self._browse_output_path)
+        browse_btn.setFixedWidth(100)
+        path_layout.addWidget(browse_btn)
+        
+        output_layout.addLayout(path_layout)
+        
+        # Имя файла
+        filename_layout = QHBoxLayout()
+        filename_label = QLabel("Имя файла:")
+        filename_label.setFixedWidth(80)
+        filename_layout.addWidget(filename_label)
+        
+        self.filename_input = QLineEdit()
+        self.filename_input.setPlaceholderText("ModList")
+        filename_layout.addWidget(self.filename_input)
+        
+        output_layout.addLayout(filename_layout)
+        
+        layout.addWidget(output_group)
+        
+        # Группа: SteamCMD
+        steamcmd_group = QGroupBox("⚙️ SteamCMD")
+        steamcmd_layout = QHBoxLayout(steamcmd_group)
+        
+        self.steamcmd_input = QLineEdit()
+        self.steamcmd_input.setPlaceholderText("Путь к steamcmd.exe...")
+        steamcmd_layout.addWidget(self.steamcmd_input)
+        
+        steamcmd_browse_btn = QPushButton("📁 Обзор")
+        steamcmd_browse_btn.clicked.connect(self._browse_steamcmd)
+        steamcmd_browse_btn.setFixedWidth(100)
+        steamcmd_layout.addWidget(steamcmd_browse_btn)
+        
+        layout.addWidget(steamcmd_group)
+        
+        # Группа: Режим работы
+        mode_group = QGroupBox("🔄 Режим работы")
+        mode_layout = QVBoxLayout(mode_group)
+        
+        self.mode_group = QButtonGroup()
+        
+        # Режим 1
+        self.mode1_radio = QRadioButton(
+            "Режим 1: Постоянный (моды сохраняются в кэше)"
+        )
+        self.mode1_radio.setChecked(True)
+        self.mode_group.addButton(self.mode1_radio, 1)
+        mode_layout.addWidget(self.mode1_radio)
+        
+        # Папка для постоянного хранения модов (Режим 1)
+        mode1_path_layout = QHBoxLayout()
+        mode1_path_label = QLabel("  Папка модов:")
+        mode1_path_label.setFixedWidth(100)
+        mode1_path_layout.addWidget(mode1_path_label)
+        
+        self.mods_path_input = QLineEdit()
+        self.mods_path_input.setPlaceholderText("Папка для постоянного хранения модов...")
+        mode1_path_layout.addWidget(self.mods_path_input)
+        
+        mods_path_browse_btn = QPushButton("📁")
+        mods_path_browse_btn.clicked.connect(self._browse_mods_path)
+        mods_path_browse_btn.setFixedWidth(40)
+        mode1_path_layout.addWidget(mods_path_browse_btn)
+        
+        mode_layout.addLayout(mode1_path_layout)
+        
+        # Режим 2
+        self.mode2_radio = QRadioButton(
+            "Режим 2: Временный (моды удаляются после обработки)"
+        )
+        self.mode_group.addButton(self.mode2_radio, 2)
+        mode_layout.addWidget(self.mode2_radio)
+        
+        # Временная папка для загрузки (Режим 2)
+        mode2_path_layout = QHBoxLayout()
+        mode2_path_label = QLabel("  Временная папка:")
+        mode2_path_label.setFixedWidth(100)
+        mode2_path_layout.addWidget(mode2_path_label)
+        
+        self.temp_path_input = QLineEdit()
+        self.temp_path_input.setPlaceholderText("Временная папка для загрузки модов...")
+        mode2_path_layout.addWidget(self.temp_path_input)
+        
+        temp_path_browse_btn = QPushButton("📁")
+        temp_path_browse_btn.clicked.connect(self._browse_temp_path)
+        temp_path_browse_btn.setFixedWidth(40)
+        mode2_path_layout.addWidget(temp_path_browse_btn)
+        
+        mode_layout.addLayout(mode2_path_layout)
+        
+        # Подключение сигналов для обновления состояния полей
+        self.mode1_radio.toggled.connect(self._update_path_fields_state)
+        self.mode2_radio.toggled.connect(self._update_path_fields_state)
+        
+        layout.addWidget(mode_group)
+        
+        # Прогресс-бар
+        progress_layout = QVBoxLayout()
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("сейчас обрабатывается %v / %m мод")
+        progress_layout.addWidget(self.progress_bar)
+        
+        # Статистика
+        self.stats_label = QLabel("Обработано: 0 | Пропущено: 0 | Ошибок: 0")
+        self.stats_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        progress_layout.addWidget(self.stats_label)
+        
+        layout.addLayout(progress_layout)
+        
+        # Кнопки управления
+        buttons_layout = QHBoxLayout()
+        
+        self.start_btn = QPushButton("▶️ Запустить")
+        self.start_btn.setProperty("class", "primary")
+        self.start_btn.clicked.connect(self._start_processing)
+        buttons_layout.addWidget(self.start_btn)
+        
+        self.stop_btn = QPushButton("⏹️ Остановить")
+        self.stop_btn.setProperty("class", "danger")
+        self.stop_btn.clicked.connect(self._stop_processing)
+        self.stop_btn.setEnabled(False)
+        buttons_layout.addWidget(self.stop_btn)
+        
+        self.open_folder_btn = QPushButton("📂 Открыть папку")
+        self.open_folder_btn.clicked.connect(self._open_output_folder)
+        buttons_layout.addWidget(self.open_folder_btn)
+        
+        layout.addLayout(buttons_layout)
+        
+        # Растягивающийся элемент
+        layout.addStretch()
+        
+        return panel
+    
+    def _create_right_panel(self) -> QWidget:
+        """Создание правой панели с логами."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(10)
+        
+        # Заголовок логов
+        header_layout = QHBoxLayout()
+        
+        logs_title = QLabel("📋 Логи")
+        logs_title.setStyleSheet(f"""
+            font-size: 16px;
+            font-weight: bold;
+            color: {COLORS["neon_purple"]};
+        """)
+        header_layout.addWidget(logs_title)
+        
+        header_layout.addStretch()
+        
+        # Размер шрифта
+        font_label = QLabel("Шрифт:")
+        font_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        header_layout.addWidget(font_label)
+        
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(self.settings.log_font_size)
+        self.font_size_spin.valueChanged.connect(self._update_log_font_size)
+        self.font_size_spin.setFixedWidth(60)
+        header_layout.addWidget(self.font_size_spin)
+        
+        layout.addLayout(header_layout)
+        
+        # Текстовое поле логов
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setFont(QFont("Consolas", self.settings.log_font_size))
+        layout.addWidget(self.log_text)
+        
+        # Кнопки управления логами
+        log_buttons_layout = QHBoxLayout()
+        
+        clear_logs_btn = QPushButton("🗑️ Очистить")
+        clear_logs_btn.clicked.connect(self._clear_logs)
+        log_buttons_layout.addWidget(clear_logs_btn)
+        
+        copy_logs_btn = QPushButton("📋 Копировать")
+        copy_logs_btn.clicked.connect(self._copy_logs)
+        log_buttons_layout.addWidget(copy_logs_btn)
+        
+        layout.addLayout(log_buttons_layout)
+        
+        # Чекбокс расширенного логирования
+        self.verbose_checkbox = QCheckBox("Расширенное логирование")
+        self.verbose_checkbox.setChecked(self.settings.verbose_logging)
+        layout.addWidget(self.verbose_checkbox)
+        
+        return panel
+    
+    def _load_settings(self) -> None:
+        """Загрузка сохранённых настроек в UI."""
+        self.steamcmd_input.setText(self.settings.steamcmd_path)
+        self.output_path_input.setText(self.settings.output_path)
+        self.filename_input.setText(self.settings.xml_filename)
+        self.collection_input.setText(self.settings.settings.last_collection_url)
+        
+        # Загрузка путей для загрузки модов
+        self.mods_path_input.setText(self.settings.mods_download_path)
+        self.temp_path_input.setText(self.settings.temp_download_path)
+        
+        if self.settings.work_mode == WorkMode.PERSISTENT:
+            self.mode1_radio.setChecked(True)
+        else:
+            self.mode2_radio.setChecked(True)
+        
+        self.font_size_spin.setValue(self.settings.log_font_size)
+        self.verbose_checkbox.setChecked(self.settings.verbose_logging)
+        
+        # Обновление состояния полей путей
+        self._update_path_fields_state()
+    
+    def _save_settings(self) -> None:
+        """Сохранение текущих настроек."""
+        self.settings.steamcmd_path = self.steamcmd_input.text()
+        self.settings.output_path = self.output_path_input.text()
+        self.settings.xml_filename = self.filename_input.text() or "ModList"
+        self.settings.settings.last_collection_url = self.collection_input.text()
+        
+        # Сохранение путей для загрузки модов
+        self.settings.mods_download_path = self.mods_path_input.text()
+        self.settings.temp_download_path = self.temp_path_input.text()
+        
+        if self.mode1_radio.isChecked():
+            self.settings.work_mode = WorkMode.PERSISTENT
+        else:
+            self.settings.work_mode = WorkMode.TEMPORARY
+        
+        self.settings.log_font_size = self.font_size_spin.value()
+        self.settings.verbose_logging = self.verbose_checkbox.isChecked()
+        
+        # Сохранение размеров окна
+        self.settings.settings.window_width = self.width()
+        self.settings.settings.window_height = self.height()
+        
+        self.settings.save_settings()
+    
+    def _browse_output_path(self) -> None:
+        """Выбор папки для сохранения XML."""
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите папку для сохранения XML",
+            self.output_path_input.text()
+        )
+        if path:
+            self.output_path_input.setText(path)
+    
+    def _browse_steamcmd(self) -> None:
+        """Выбор файла steamcmd."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите steamcmd.exe",
+            self.steamcmd_input.text(),
+            "Executable (*.exe);;All Files (*)"
+        )
+        if path:
+            self.steamcmd_input.setText(path)
+    
+    def _browse_mods_path(self) -> None:
+        """Выбор папки для постоянного хранения модов (Режим 1)."""
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите папку для хранения модов",
+            self.mods_path_input.text()
+        )
+        if path:
+            self.mods_path_input.setText(path)
+    
+    def _browse_temp_path(self) -> None:
+        """Выбор временной папки для загрузки модов (Режим 2)."""
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите временную папку для загрузки",
+            self.temp_path_input.text()
+        )
+        if path:
+            self.temp_path_input.setText(path)
+    
+    def _update_path_fields_state(self) -> None:
+        """Обновление состояния полей путей в зависимости от выбранного режима."""
+        mode1_selected = self.mode1_radio.isChecked()
+        
+        # Режим 1: поле модов активно, временное неактивно
+        self.mods_path_input.setEnabled(mode1_selected)
+        self.temp_path_input.setEnabled(not mode1_selected)
+        
+        # Визуальное выделение активного поля
+        if mode1_selected:
+            self.mods_path_input.setStyleSheet("")
+            self.temp_path_input.setStyleSheet(f"color: {COLORS['text_muted']};")
+        else:
+            self.mods_path_input.setStyleSheet(f"color: {COLORS['text_muted']};")
+            self.temp_path_input.setStyleSheet("")
+    
+    def _get_current_download_path(self) -> str:
+        """Получить путь загрузки в зависимости от выбранного режима."""
+        if self.mode1_radio.isChecked():
+            return self.mods_path_input.text().strip()
+        else:
+            return self.temp_path_input.text().strip()
+    
+    def _log(self, message: str, level: str = "INFO") -> None:
+        """Добавление сообщения в лог."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        html = get_log_html_style(level, message, timestamp)
+        
+        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+        self.log_text.insertHtml(html)
+        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+    
+    def _clear_logs(self) -> None:
+        """Очистка логов."""
+        self.log_text.clear()
+    
+    def _copy_logs(self) -> None:
+        """Копирование логов в буфер обмена."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.log_text.toPlainText())
+        self._log("Логи скопированы в буфер обмена", "INFO")
+    
+    def _update_log_font_size(self, size: int) -> None:
+        """Обновление размера шрифта логов."""
+        font = self.log_text.font()
+        font.setPointSize(size)
+        self.log_text.setFont(font)
+    
+    def _open_output_folder(self) -> None:
+        """Открытие папки с результатами."""
+        path = self.output_path_input.text()
+        if path and os.path.exists(path):
+            os.startfile(path) if os.name == 'nt' else os.system(f'xdg-open "{path}"')
+        else:
+            QMessageBox.warning(
+                self,
+                "Папка не найдена",
+                "Указанная папка не существует."
+            )
+    
+    def _validate_inputs(self) -> tuple[bool, str]:
+        """Проверка введённых данных."""
+        if not self.collection_input.text().strip():
+            return False, "Введите ссылку на коллекцию Steam Workshop"
+        
+        if not self.steamcmd_input.text().strip():
+            return False, "Укажите путь к steamcmd"
+        
+        if not os.path.exists(self.steamcmd_input.text()):
+            return False, "Файл steamcmd не найден"
+        
+        if not self.output_path_input.text().strip():
+            return False, "Укажите путь для сохранения XML"
+        
+        return True, ""
+    
+    def _start_processing(self) -> None:
+        """Запуск обработки коллекции."""
+        # Проверка, не запущен ли уже процесс
+        if self.worker and self.worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Процесс уже запущен",
+                "Дождитесь завершения текущей обработки или остановите её."
+            )
+            return
+        
+        # Валидация
+        valid, error = self._validate_inputs()
+        if not valid:
+            QMessageBox.warning(self, "Ошибка", error)
+            return
+        
+        # Сохранение настроек
+        self._save_settings()
+        
+        # Определение режима работы
+        work_mode = WorkMode.PERSISTENT if self.mode1_radio.isChecked() else WorkMode.TEMPORARY
+        
+        # Получение пути загрузки в зависимости от режима
+        download_path = self._get_current_download_path()
+        
+        # Создание и запуск рабочего потока
+        self.worker = WorkerThread(
+            collection_url=self.collection_input.text().strip(),
+            steamcmd_path=self.steamcmd_input.text().strip(),
+            output_path=self.output_path_input.text().strip(),
+            xml_filename=self.filename_input.text().strip() or "ModList",
+            work_mode=work_mode,
+            download_path=download_path,
+            include_workshop_ids=True,
+            verbose=self.verbose_checkbox.isChecked()
+        )
+        
+        # Подключение сигналов
+        self.worker.log_signal.connect(self._log)
+        self.worker.progress_signal.connect(self._update_progress)
+        self.worker.finished_signal.connect(self._on_processing_finished)
+        self.worker.stats_signal.connect(self._update_stats)
+        
+        # Обновление UI
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.progress_bar.setValue(0)
+        
+        # Запуск
+        self.worker.start()
+        self._log("Запуск обработки...", "INFO")
+    
+    def _stop_processing(self) -> None:
+        """Остановка обработки."""
+        if self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self._log("Запрос на остановку отправлен...", "WARNING")
+    
+    def _update_progress(self, current: int, total: int) -> None:
+        """Обновление прогресс-бара."""
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
+        self.progress_bar.setFormat(f"{current} / {total} модов")
+    
+    def _update_stats(self, processed: int, skipped: int, errors: int) -> None:
+        """Обновление статистики."""
+        self.stats_label.setText(
+            f"Обработано: {processed} | Пропущено: {skipped} | Ошибок: {errors}"
+        )
+    
+    def _on_processing_finished(self, success: bool, message: str) -> None:
+        """Обработка завершения работы."""
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
         
         if success:
-            self.update_progress(1.0, f"✅ {stats.total_mods}")
-            messagebox.showinfo(
-                self.t('success'),
-                f"{self.t('conversion_complete')}\n\n"
-                f"{self.t('total')} {stats.total_mods}\n"
-                f"✅ {self.t('successful')} {stats.successful - stats.cached}\n"
-                f"📦 {self.t('cached')} {stats.cached}\n"
-                f"❌ {self.t('failed')} {stats.failed}\n\n"
-                f"{self.t('file_saved')}\n{message}"
-            )
+            self._log("Обработка успешно завершена!", "SUCCESS")
+            QMessageBox.information(self, "Готово", message)
         else:
-            self.update_progress(0, "❌")
-            messagebox.showerror(self.t('error'), f"{self.t('conversion_failed')}\n{message}")
+            self._log(f"Обработка завершена с ошибкой: {message}", "ERROR")
+            QMessageBox.warning(self, "Ошибка", message)
+    
+    def closeEvent(self, event) -> None:
+        """Обработка закрытия окна."""
+        # Остановка рабочего потока
+        if self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait(5000)
+        
+        # Сохранение настроек
+        self._save_settings()
+        
+        event.accept()
 
-    def run(self):
-        self.root.mainloop()
+
+def main():
+    """Точка входа в приложение."""
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    
+    # Установка иконки приложения (если есть)
+    # app.setWindowIcon(QIcon("icon.png"))
+    
+    window = MainWindow()
+    window.show()
+    
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
-    app = ModernConverterGUI()
-    app.run()
+    main()
