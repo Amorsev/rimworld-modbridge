@@ -37,8 +37,8 @@ RimWorld Mod Collector позволяет:
 
 1. **Клонируйте репозиторий:**
 ```bash
-git clone https://github.com/your-repo/rimworld-mod-collector.git
-cd rimworld-mod-collector
+git clone https://github.com/Amorsev/rimworld-modbridge.git
+cd rimworld-modbridge
 ```
 
 2. **Создайте виртуальное окружение (рекомендуется):**
@@ -105,7 +105,7 @@ python main.py
 ## 📁 Структура проекта
 
 ```
-rimworld_mod_collector/
+rimworld_modbridge/
 ├── __init__.py          # Инициализация пакета
 ├── main.py              # Главный модуль с GUI
 ├── database.py          # Работа с SQLite базой данных
