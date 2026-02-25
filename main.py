@@ -231,9 +231,10 @@ class WorkerThread(QThread):
             if mod_infos and not self._stop_requested:
                 self.log(f"Генерация XML файла ({len(mod_infos)} модов)...", "INFO")
                 
-                xml_content = xml_processor.generate_rimpy_xml_extended(
+                # Генерация XML в формате ModsConfigData (RimWorld native)
+                xml_content = xml_processor.generate_mods_config_data_xml(
                     mod_infos,
-                    list_name=self.xml_filename,
+                    version="1.6.4633",
                     include_workshop_ids=self.include_workshop_ids
                 )
                 

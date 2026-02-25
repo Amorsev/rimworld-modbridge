@@ -251,6 +251,66 @@ class XmlProcessor:
         
         return '\n'.join(lines)
     
+    def generate_mods_config_data_xml(
+        self,
+        mod_infos: List[ModInfo],
+        version: str = "1.6.4633",
+        include_workshop_ids: bool = True
+    ) -> str:
+        """
+        Сгенерировать XML файл в формате ModsConfigData (RimWorld native).
+        
+        Формат аналогичен WitcherRimworld.xml:
+        <?xml version="1.0" encoding="utf-8"?>
+        <ModsConfigData>
+            <version>1.6.4633</version>
+            <activeMods>
+                <li>packageId1</li>
+                <li>packageId2</li>
+            </activeMods>
+            <knownExpansions>
+                <li>ludeon.rimworld</li>
+                ...
+            </knownExpansions>
+        </ModsConfigData>
+        
+        Args:
+            mod_infos: Список информации о модах.
+            version: Версия RimWorld.
+            include_workshop_ids: Включать ли workshop ID в комментарии.
+            
+        Returns:
+            Строка с XML содержимым.
+        """
+        lines = ['<?xml version="1.0" encoding="utf-8"?>']
+        lines.append('<ModsConfigData>')
+        lines.append(f'    <version>{version}</version>')
+        lines.append('    <activeMods>')
+        
+        for mod_info in mod_infos:
+            if include_workshop_ids and mod_info.workshop_id:
+                comment = f"        <!-- Workshop ID: {mod_info.workshop_id}"
+                if mod_info.name:
+                    comment += f" | {mod_info.name}"
+                comment += " -->"
+                lines.append(comment)
+            lines.append(f'        <li>{mod_info.package_id}</li>')
+        
+        lines.append('    </activeMods>')
+        
+        # knownExpansions - базовые DLC RimWorld
+        lines.append('    <knownExpansions>')
+        lines.append('        <li>ludeon.rimworld</li>')
+        lines.append('        <li>ludeon.rimworld.royalty</li>')
+        lines.append('        <li>ludeon.rimworld.ideology</li>')
+        lines.append('        <li>ludeon.rimworld.biotech</li>')
+        lines.append('        <li>ludeon.rimworld.anomaly</li>')
+        lines.append('    </knownExpansions>')
+        
+        lines.append('</ModsConfigData>')
+        
+        return '\n'.join(lines)
+    
     def save_xml(
         self, 
         xml_content: str, 
